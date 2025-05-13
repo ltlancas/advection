@@ -36,6 +36,8 @@ class Advection(object):
             self.kspec = 2.0
         if "sigma" not in self.__dict__:
             self.sigma = 1.0
+        if "vel_op" not in self.__dict__:
+            self.vel_op = 0
 
         # options for scalar initial conditions
         if "si_op" not in self.__dict__:
@@ -44,6 +46,13 @@ class Advection(object):
         self._init_grid()
         self._init_velocity_field()
         self._init_scalar()
+
+        if "tlim" not in self.__dict__:
+            self.tlim = 10*max(self.Lx/self.sigma, self.Ly/self.sigma)
+        if "cfl" not in self.__dict__:
+            self.cfl = 0.5
+        self.dt = self.cfl*min(self.dx/np.max(np.abs(self.vx)), self.dy/np.max(np.abs(self.vy)))
+        self.nt = int(self.tlim/self.dt)
 
     def _init_grid(self):
         """
@@ -73,31 +82,41 @@ class Advection(object):
         self.vx = np.zeros((self.nx, self.ny))
         self.vy = np.zeros((self.nx, self.ny))
 
+        if self.vel_op == 0:
+            kx = np.fft.fftfreq(self.nx, d=self.dx) * 2*np.pi
+            ky = np.fft.fftfreq(self.ny, d=self.dy) * 2*np.pi
+            KX, KY = np.meshgrid(kx, ky)
+            K = np.sqrt(KX**2 + KY**2).T
+            print(K.shape)
 
-        kx = np.fft.fftfreq(self.nx, d=self.dx) * 2*np.pi
-        ky = np.fft.fftfreq(self.ny, d=self.dy) * 2*np.pi
-        KX, KY = np.meshgrid(kx, ky)
-        K = np.sqrt(KX**2 + KY**2).T
-        print(K.shape)
+            # Generate random phases
+            phix = 2*np.pi * np.random.uniform(size=(self.nx,self.ny))
+            phiy = 2*np.pi * np.random.uniform(size=(self.nx,self.ny))
 
-        # Generate random phases
-        phix = 2*np.pi * np.random.uniform(size=(self.nx,self.ny))
-        phiy = 2*np.pi * np.random.uniform(size=(self.nx,self.ny))
+            # Create power spectrum in Fourier space
+            vx_k = np.zeros((self.nx,self.ny), dtype=complex)
+            vy_k = np.zeros((self.nx,self.ny), dtype=complex)
+            mask = K > 0
+            vx_k[mask] = K[mask]**(-1*self.kspec) * np.exp(1j * phix[mask])
+            vy_k[mask] = K[mask]**(-1*self.kspec) * np.exp(1j * phiy[mask])
 
-        # Create power spectrum in Fourier space
-        vx_k = np.zeros((self.nx,self.ny), dtype=complex)
-        vy_k = np.zeros((self.nx,self.ny), dtype=complex)
-        mask = K > 0
-        vx_k[mask] = K[mask]**(-1*self.kspec) * np.exp(1j * phix[mask])
-        vy_k[mask] = K[mask]**(-1*self.kspec) * np.exp(1j * phiy[mask])
+            # Transform back to real space
+            self.vx = np.real(np.fft.ifft2(vx_k))
+            self.vy = np.real(np.fft.ifft2(vy_k))
 
-        # Transform back to real space
-        self.vx = np.real(np.fft.ifft2(vx_k))
-        self.vy = np.real(np.fft.ifft2(vy_k))
+            sigma = np.sqrt(np.std(self.vx)**2 + np.std(self.vy)**2)
+            self.vx *= self.sigma/sigma
+            self.vy *= self.sigma/sigma
+        elif self.vel_op == 1:
+            self.vx = np.ones((self.nx, self.ny))
+            self.vy = np.ones((self.nx, self.ny))
+        else:
+            raise ValueError("Invalid velocity field option")
 
-        sigma = np.sqrt(np.std(self.vx)**2 + np.std(self.vy)**2)
-        self.vx *= self.sigma/sigma
-        self.vy *= self.sigma/sigma
+        # get interface velocities
+        self.vx_int = 0.5*(self.vx + np.roll(self.vx,1,axis=1))
+        self.vy_int = 0.5*(self.vy + np.roll(self.vy,1,axis=0))
+
 
     def _init_scalar(self):
         """
@@ -110,8 +129,30 @@ class Advection(object):
         else:
             raise ValueError("Invalid scalar initial condition option")
 
-    def solve(self):
+    def solve(self, T):
         """
-        Solve the advection equation
+        Solve the advection equation for a given time step
         """
-        pass
+        tev = 0
+        while tev < T:
+            if tev + self.dt > T:
+                dt = T-tev
+            else:
+                dt = self.dt
+            self.single_iteration(dt)
+            tev += dt
+
+    def single_iteration(self, dt):
+        """
+        Perform a single iteration of the advection equation
+        """
+        (sr,sl) = (self.scalar,np.roll(self.scalar,1,axis=1))
+        s_intx = sr*(self.vx_int < 0) + sl*(self.vx_int > 0) + 0.5*(sr+sl)*(self.vx_int == 0)
+        (sr,sl) = (self.scalar,np.roll(self.scalar,1,axis=0))
+        s_inty = sr*(self.vy_int < 0) + sl*(self.vy_int > 0) + 0.5*(sr+sl)*(self.vy_int == 0)
+        F = -1*(dt/self.dx)*s_intx*self.vx_int
+        G = -1*(dt/self.dy)*s_inty*self.vy_int
+
+        Fdiff = np.roll(F,-1,axis=1) - F
+        Gdiff = np.roll(G,-1,axis=0) - G
+        self.scalar = self.scalar + Fdiff + Gdiff
