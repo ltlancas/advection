@@ -53,6 +53,10 @@ class Advection(object):
             self.cfl = 0.5
         self.dt = self.cfl*min(self.dx/np.max(np.abs(self.vx)), self.dy/np.max(np.abs(self.vy)))
         self.nt = int(self.tlim/self.dt)
+        if "x_order" not in self.__dict__:
+            self.x_order = 2
+        if "y_order" not in self.__dict__:
+            self.y_order = 2
 
     def _init_grid(self):
         """
@@ -109,14 +113,17 @@ class Advection(object):
             self.vy *= self.sigma/sigma
         elif self.vel_op == 1:
             self.vx = np.ones((self.nx, self.ny))
+            if "vx_scale" in self.__dict__:
+                self.vx *= self.vx_scale
             self.vy = np.ones((self.nx, self.ny))
+            if "vy_scale" in self.__dict__:
+                self.vy *= self.vy_scale
         else:
             raise ValueError("Invalid velocity field option")
 
         # get interface velocities
         self.vx_int = 0.5*(self.vx + np.roll(self.vx,1,axis=1))
         self.vy_int = 0.5*(self.vy + np.roll(self.vy,1,axis=0))
-
 
     def _init_scalar(self):
         """
@@ -146,13 +153,82 @@ class Advection(object):
         """
         Perform a single iteration of the advection equation
         """
-        (sr,sl) = (self.scalar,np.roll(self.scalar,1,axis=1))
-        s_intx = sr*(self.vx_int < 0) + sl*(self.vx_int > 0) + 0.5*(sr+sl)*(self.vx_int == 0)
-        (sr,sl) = (self.scalar,np.roll(self.scalar,1,axis=0))
-        s_inty = sr*(self.vy_int < 0) + sl*(self.vy_int > 0) + 0.5*(sr+sl)*(self.vy_int == 0)
-        F = -1*(dt/self.dx)*s_intx*self.vx_int
-        G = -1*(dt/self.dy)*s_inty*self.vy_int
+        # use predictor corrector scheme if order > 1
+        if (self.x_order > 1 or self.y_order > 1):
+            # 2nd-order integratoin
+            self.reconstrcut_x(self.scalar)
+            self.reconstrcut_y(self.scalar)
 
-        Fdiff = np.roll(F,-1,axis=1) - F
-        Gdiff = np.roll(G,-1,axis=0) - G
-        self.scalar = self.scalar + Fdiff + Gdiff
+            # construct fluxes
+            F = -0.5*(dt/self.dx)*self.s_intx*self.vx_int
+            G = -0.5*(dt/self.dy)*self.s_inty*self.vy_int
+
+            # calculate flux divergences
+            Fdiff = np.roll(F,-1,axis=1) - F
+            Gdiff = np.roll(G,-1,axis=0) - G
+            # take half step forward
+            sdt2 = self.scalar + (Fdiff + Gdiff)
+
+            self.reconstrcut_x(sdt2)
+            self.reconstrcut_y(sdt2)
+
+            # construct fluxes
+            F = -1*(dt/self.dx)*self.s_intx*self.vx_int
+            G = -1*(dt/self.dy)*self.s_inty*self.vy_int
+
+            # calculate flux divergences
+            Fdiff = np.roll(F,-1,axis=1) - F
+            Gdiff = np.roll(G,-1,axis=0) - G
+            self.scalar += Fdiff + Gdiff
+        else:
+            # perform reconstruction
+            self.reconstrcut_x(self.scalar)
+            self.reconstrcut_y(self.scalar)
+
+            # construct fluxes
+            F = -1*(dt/self.dx)*self.s_intx*self.vx_int
+            G = -1*(dt/self.dy)*self.s_inty*self.vy_int
+
+            # calculate flux divergences
+            Fdiff = np.roll(F,-1,axis=1) - F
+            Gdiff = np.roll(G,-1,axis=0) - G
+
+            # apply flux divergences to the scalar field
+            self.scalar += Fdiff + Gdiff
+
+    def reconstrcut_x(self, s):
+        """
+        Technically these are both the reconstructions and the 'Riemann' solvers
+        """
+        # first reconstruct, either first or second order
+        if self.x_order == 1:
+            (sr,sl) = (s,np.roll(s,1,axis=1))
+        elif self.x_order == 2:
+            dsL = s - np.roll(s,1,axis=1)
+            dsR = np.roll(s,-1,axis=1) - s
+            dsC = (np.roll(s,-1,axis=1) - np.roll(s,1,axis=1))/2
+            ds = np.sign(dsC)*np.minimum(2*np.minimum(np.abs(dsL),np.abs(dsR)), np.abs(dsC))
+            sr = s - ds/2
+            sl = np.roll(s + ds/2, 1,axis=1)
+        else:
+            raise ValueError("Invalid x-order")
+
+        # then apply the "Riemann solver" based on velocity
+        self.s_intx = sr*(self.vx_int < 0) + sl*(self.vx_int > 0) + 0.5*(sr+sl)*(self.vx_int == 0)
+
+    def reconstrcut_y(self, s):
+        # first reconstruct, either first or second order
+        if self.y_order == 1:
+            (sr,sl) = (s,np.roll(s,1,axis=0))
+        elif self.y_order == 2:
+            dsL = s - np.roll(s,1,axis=0)
+            dsR = np.roll(s,-1,axis=0) - s
+            dsC = (np.roll(s,-1,axis=0) - np.roll(s,1,axis=0))/2
+            ds = np.sign(dsC)*np.minimum(2*np.minimum(np.abs(dsL),np.abs(dsR)), np.abs(dsC))
+            sr = s - ds/2
+            sl = np.roll(s + ds/2, 1,axis=0)
+        else:
+            raise ValueError("Invalid y-order")
+
+        # then apply the "Riemann solver" based on velocity
+        self.s_inty = sr*(self.vy_int < 0) + sl*(self.vy_int > 0) + 0.5*(sr+sl)*(self.vy_int == 0)
