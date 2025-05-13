@@ -36,9 +36,14 @@ class Advection(object):
             self.kspec = 2.0
         if "sigma" not in self.__dict__:
             self.sigma = 1.0
+
+        # options for scalar initial conditions
+        if "si_op" not in self.__dict__:
+            self.si_op = 0
         
         self._init_grid()
         self._init_velocity_field()
+        self._init_scalar()
 
     def _init_grid(self):
         """
@@ -47,18 +52,12 @@ class Advection(object):
         # Create coordinate arrays
         self.dx = self.Lx / self.nx
         self.dy = self.Ly / self.ny
-        # Initialize arrays for velocity components, positions and scalar field
-        self.u = np.zeros((self.nx, self.ny))  # x-velocity field
-        self.v = np.zeros((self.nx, self.ny))  # y-velocity field
         
         # Create coordinate arrays
         x = np.linspace(-self.Lx/2, self.Lx/2, self.nx)
         y = np.linspace(-self.Ly/2, self.Ly/2, self.ny)
         self.X, self.Y = np.meshgrid(x, y)  # 2D position arrays
         
-        # Initialize scalar field
-        self.scalar = np.zeros((self.nx, self.ny))  # scalar concentration field
-
     def _init_velocity_field(self):
         """
         Initializes a 2D, periodic gaussian random field with a given power spectrum
@@ -99,6 +98,17 @@ class Advection(object):
         sigma = np.sqrt(np.std(self.vx)**2 + np.std(self.vy)**2)
         self.vx *= self.sigma/sigma
         self.vy *= self.sigma/sigma
+
+    def _init_scalar(self):
+        """
+        Initializes the scalar field
+        """
+
+        if self.si_op == 0:
+            R = np.sqrt((self.X/self.Lx)**2 + (self.Y/self.Ly)**2)
+            self.scalar = 1.*(R<0.25)
+        else:
+            raise ValueError("Invalid scalar initial condition option")
 
     def solve(self):
         """
