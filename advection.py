@@ -38,6 +38,8 @@ class Advection(object):
             self.sigma = 1.0
         if "vel_op" not in self.__dict__:
             self.vel_op = 0
+        if "kmax" not in self.__dict__:
+            self.kmax = 0.0
 
         # options for scalar initial conditions
         if "si_op" not in self.__dict__:
@@ -97,13 +99,12 @@ class Advection(object):
             kx = np.fft.fftfreq(self.nx, d=self.dx) * 2*np.pi
             ky = np.fft.fftfreq(self.ny, d=self.dy) * 2*np.pi
             KX, KY = np.meshgrid(kx, ky)
-            K = np.sqrt(KX**2 + KY**2).T
-            print(K.shape)
+            (KX,KY) = (KX.T, KY.T)
+            K = np.sqrt(KX**2 + KY**2)
 
-            # Generate random phases
-            phix = 2*np.pi * np.random.uniform(size=(self.nx,self.ny))
-            phiy = 2*np.pi * np.random.uniform(size=(self.nx,self.ny))
-
+            # Generate random phases in a way that guarantees a real field
+            phix = self._get_random_phase()
+            phiy = self._get_random_phase()
             # Create power spectrum in Fourier space
             vx_k = np.zeros((self.nx,self.ny), dtype=complex)
             vy_k = np.zeros((self.nx,self.ny), dtype=complex)
@@ -127,10 +128,21 @@ class Advection(object):
                     vy_k = vy_comp_k
                 else:
                     raise ValueError("Invalid velocity field option")
-                
+            
+            if self.kmax > 0:
+                # remove high kmodes
+                mask = K/(2*np.pi) > self.kmax
+                vx_k[mask] = 0
+                vy_k[mask] = 0
+
+            self.vx_k = vx_k
+            self.vy_k = vy_k
+            self.KX = KX
+            self.KY = KY
+
             # Transform back to real space
-            self.vx = np.real(np.fft.ifft2(vx_k))
-            self.vy = np.real(np.fft.ifft2(vy_k))
+            self.vx = np.real(np.fft.ifftn(vx_k))
+            self.vy = np.real(np.fft.ifftn(vy_k))
 
             sigma = np.sqrt(np.std(self.vx)**2 + np.std(self.vy)**2)
             self.vx *= self.sigma/sigma
@@ -141,6 +153,23 @@ class Advection(object):
         # get interface velocities
         self.vx_int = 0.5*(self.vx + np.roll(self.vx,1,axis=1))
         self.vy_int = 0.5*(self.vy + np.roll(self.vy,1,axis=0))
+
+    def _get_random_phase(self):
+        # creates random phase matrix in a way that
+        # guarantees that the fourier transform is real
+        phi = 2*np.pi * np.random.uniform(size=(self.nx,self.ny))
+        # first make sure maximum and zero frequency phases are zero
+        phi[0] = 0
+        phi[self.nx//2] = 0
+        phi[:,0] = 0
+        phi[:,self.ny//2] = 0
+        # make anti-symmetric
+        for i in range(1,self.nx//2):
+            for j in range(1,self.ny//2):
+                phi[i,j] = -1*phi[-i,-j]
+                phi[-i,j] = -1*phi[i,-j]
+        return phi
+
 
     def _init_scalar(self):
         """
