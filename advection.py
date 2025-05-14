@@ -101,8 +101,8 @@ class Advection(object):
             vx_k = np.zeros((self.nx,self.ny), dtype=complex)
             vy_k = np.zeros((self.nx,self.ny), dtype=complex)
             mask = K > 0
-            vx_k[mask] = K[mask]**(-1*self.kspec) * np.exp(1j * phix[mask])
-            vy_k[mask] = K[mask]**(-1*self.kspec) * np.exp(1j * phiy[mask])
+            vx_k[mask] = K[mask]**(-0.5*self.kspec) * np.exp(1j * phix[mask])
+            vy_k[mask] = K[mask]**(-0.5*self.kspec) * np.exp(1j * phiy[mask])
 
             # Transform back to real space
             self.vx = np.real(np.fft.ifft2(vx_k))
