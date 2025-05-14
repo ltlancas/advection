@@ -115,9 +115,9 @@ class Advection(object):
             if self.vel_op >= 2:
                 # calculate compressive component
                 v_k_comp = np.zeros((self.nx,self.ny), dtype=complex)
-                v_k_comp[mask] = (KX*vx_k + KY*vy_k)[mask]/(K[mask]**2)
-                vx_comp_k = KX*v_k_comp
-                vy_comp_k = KY*v_k_comp
+                v_k_comp[mask] = (KX.T*vx_k + KY.T*vy_k)[mask]/(K[mask]**2)
+                vx_comp_k = KX.T*v_k_comp
+                vy_comp_k = KY.T*v_k_comp
                 if self.vel_op == 2:
                     # remove compressive component
                     vx_k = vx_k - vx_comp_k
