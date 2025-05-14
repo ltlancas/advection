@@ -87,6 +87,13 @@ class Advection(object):
         self.vy = np.zeros((self.nx, self.ny))
 
         if self.vel_op == 0:
+            self.vx = np.ones((self.nx, self.ny))
+            if "vx_scale" in self.__dict__:
+                self.vx *= self.vx_scale
+            self.vy = np.ones((self.nx, self.ny))
+            if "vy_scale" in self.__dict__:
+                self.vy *= self.vy_scale
+        elif self.vel_op >= 1:
             kx = np.fft.fftfreq(self.nx, d=self.dx) * 2*np.pi
             ky = np.fft.fftfreq(self.ny, d=self.dy) * 2*np.pi
             KX, KY = np.meshgrid(kx, ky)
@@ -104,6 +111,23 @@ class Advection(object):
             vx_k[mask] = K[mask]**(-0.5*self.kspec) * np.exp(1j * phix[mask])
             vy_k[mask] = K[mask]**(-0.5*self.kspec) * np.exp(1j * phiy[mask])
 
+            if self.vel_op >= 2:
+                # calculate compressive component
+                v_k_comp = np.zeros((self.nx,self.ny), dtype=complex)
+                v_k_comp[mask] = (KX*vx_k + KY*vy_k)[mask]/(K[mask]**2)
+                vx_comp_k = KX*v_k_comp
+                vy_comp_k = KY*v_k_comp
+                if self.vel_op == 2:
+                    # remove compressive component
+                    vx_k = vx_k - vx_comp_k
+                    vy_k = vy_k - vy_comp_k
+                elif self.vel_op == 3:
+                    # keep compressive component
+                    vx_k = vx_comp_k
+                    vy_k = vy_comp_k
+                else:
+                    raise ValueError("Invalid velocity field option")
+                
             # Transform back to real space
             self.vx = np.real(np.fft.ifft2(vx_k))
             self.vy = np.real(np.fft.ifft2(vy_k))
@@ -111,13 +135,6 @@ class Advection(object):
             sigma = np.sqrt(np.std(self.vx)**2 + np.std(self.vy)**2)
             self.vx *= self.sigma/sigma
             self.vy *= self.sigma/sigma
-        elif self.vel_op == 1:
-            self.vx = np.ones((self.nx, self.ny))
-            if "vx_scale" in self.__dict__:
-                self.vx *= self.vx_scale
-            self.vy = np.ones((self.nx, self.ny))
-            if "vy_scale" in self.__dict__:
-                self.vy *= self.vy_scale
         else:
             raise ValueError("Invalid velocity field option")
 
