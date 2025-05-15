@@ -157,8 +157,8 @@ class Advection(object):
             raise ValueError("Invalid velocity field option")
 
         # get interface velocities
-        self.vx_int = 0.5*(self.vx + np.roll(self.vx,1,axis=1))
-        self.vy_int = 0.5*(self.vy + np.roll(self.vy,1,axis=0))
+        self.vx_int = 0.5*(self.vx + np.roll(self.vx,1,axis=0))
+        self.vy_int = 0.5*(self.vy + np.roll(self.vy,1,axis=1))
 
     def _get_random_phase(self):
         # creates random phase matrix in a way that
@@ -218,8 +218,8 @@ class Advection(object):
             G = -0.5*(dt/self.dy)*self.s_inty*self.vy_int
 
             # calculate flux divergences
-            Fdiff = np.roll(F,-1,axis=1) - F
-            Gdiff = np.roll(G,-1,axis=0) - G
+            Fdiff = np.roll(F,-1,axis=0) - F
+            Gdiff = np.roll(G,-1,axis=1) - G
             # take half step forward
             sdt2 = self.scalar + (Fdiff + Gdiff)
 
@@ -231,8 +231,8 @@ class Advection(object):
             G = -1*(dt/self.dy)*self.s_inty*self.vy_int
 
             # calculate flux divergences
-            Fdiff = np.roll(F,-1,axis=1) - F
-            Gdiff = np.roll(G,-1,axis=0) - G
+            Fdiff = np.roll(F,-1,axis=0) - F
+            Gdiff = np.roll(G,-1,axis=1) - G
             self.scalar += Fdiff + Gdiff
         else:
             # perform reconstruction
@@ -244,8 +244,8 @@ class Advection(object):
             G = -1*(dt/self.dy)*self.s_inty*self.vy_int
 
             # calculate flux divergences
-            Fdiff = np.roll(F,-1,axis=1) - F
-            Gdiff = np.roll(G,-1,axis=0) - G
+            Fdiff = np.roll(F,-1,axis=0) - F
+            Gdiff = np.roll(G,-1,axis=1) - G
 
             # apply flux divergences to the scalar field
             self.scalar += Fdiff + Gdiff
@@ -256,14 +256,15 @@ class Advection(object):
         """
         # first reconstruct, either first or second order
         if self.x_order == 1:
-            (sr,sl) = (s,np.roll(s,1,axis=1))
+            (sr,sl) = (s,np.roll(s,1,axis=0))
         elif self.x_order == 2:
-            dsL = s - np.roll(s,1,axis=1)
-            dsR = np.roll(s,-1,axis=1) - s
-            dsC = (np.roll(s,-1,axis=1) - np.roll(s,1,axis=1))/2
+            # Athena 08 paper Eq 38 for TVD reconstruction
+            dsL = s - np.roll(s,1,axis=0)
+            dsR = np.roll(s,-1,axis=0) - s
+            dsC = (np.roll(s,-1,axis=0) - np.roll(s,1,axis=0))/2
             ds = np.sign(dsC)*np.minimum(2*np.minimum(np.abs(dsL),np.abs(dsR)), np.abs(dsC))
             sr = s - ds/2
-            sl = np.roll(s + ds/2, 1,axis=1)
+            sl = np.roll(s + ds/2, 1,axis=0)
         else:
             raise ValueError("Invalid x-order")
 
@@ -273,14 +274,14 @@ class Advection(object):
     def reconstrcut_y(self, s):
         # first reconstruct, either first or second order
         if self.y_order == 1:
-            (sr,sl) = (s,np.roll(s,1,axis=0))
+            (sr,sl) = (s,np.roll(s,1,axis=1))
         elif self.y_order == 2:
             dsL = s - np.roll(s,1,axis=0)
-            dsR = np.roll(s,-1,axis=0) - s
-            dsC = (np.roll(s,-1,axis=0) - np.roll(s,1,axis=0))/2
+            dsR = np.roll(s,-1,axis=1) - s
+            dsC = (np.roll(s,-1,axis=1) - np.roll(s,1,axis=1))/2
             ds = np.sign(dsC)*np.minimum(2*np.minimum(np.abs(dsL),np.abs(dsR)), np.abs(dsC))
             sr = s - ds/2
-            sl = np.roll(s + ds/2, 1,axis=0)
+            sl = np.roll(s + ds/2, 1,axis=1)
         else:
             raise ValueError("Invalid y-order")
 
