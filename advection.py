@@ -113,41 +113,46 @@ class Advection(object):
             mask = K > 0
             vx_k[mask] = K[mask]**(-0.5*self.kspec) * np.exp(1j * phix[mask])
             vy_k[mask] = K[mask]**(-0.5*self.kspec) * np.exp(1j * phiy[mask])
-            self.vx_k = vx_k
-            self.vy_k = vy_k
+
+            # calculate solenoidal field
+            Az_k = np.zeros((self.nx,self.ny), dtype=complex)
+            Az_k[mask] = 1.j*(KX*vy_k - KY*vx_k)[mask]/(K[mask]**2)
+            Az_k[self.nx//2] = 0
+            Az_k[:,self.ny//2] = 0
+            Az = np.fft.ifftn(Az_k).real
+            # minus sign in principle comes from the tranformation
+            # it's not strictly necessary to do this
+            vx_sol = (np.roll(Az,-1,axis=1) - np.roll(Az,1,axis=1))/(2*self.dy)
+            vy_sol = -1*(np.roll(Az,-1,axis=0) - np.roll(Az,1,axis=0))/(2*self.dx)
+
+            # calculate compressive field
+            v_k_comp = np.zeros((self.nx,self.ny), dtype=np.complex128)
+            v_k_comp[mask] = 1.j*(KX*vx_k + KY*vy_k)[mask]/(K[mask]**2)
+            v_k_comp[self.nx//2] = 0
+            v_k_comp[:,self.ny//2] = 0
+            v_comp = np.fft.ifftn(v_k_comp).real
+            vx_comp = -1*(np.roll(v_comp,-1,axis=0) - np.roll(v_comp,1,axis=0))/(2*self.dx)
+            vy_comp = -1*(np.roll(v_comp,-1,axis=1) - np.roll(v_comp,1,axis=1))/(2*self.dy)
 
             if self.vel_op == 1:
                 # keep entire field, compressive and solenoidal parts
-                self.vx = np.real(np.fft.ifftn(vx_k))
-                self.vy = np.real(np.fft.ifftn(vy_k))
+                self.vx = vx_comp + vx_sol
+                self.vy = vy_comp + vy_sol
             elif self.vel_op == 2:
-                # calculate and return solenoidal field
-                Az_k = np.zeros((self.nx,self.ny), dtype=complex)
-                Az_k[mask] = 1.j*(KX*vy_k - KY*vx_k)[mask]/(K[mask]**2)
-                Az_k[self.nx//2] = 0
-                Az_k[:,self.ny//2] = 0
-                self.Az_k = Az_k
-                Az = np.fft.ifftn(Az_k).real
-                # minus sign in principle comes from the tranformation
-                # it's not strictly necessary to do this
-                self.vx = (np.roll(Az,-1,axis=1) - np.roll(Az,1,axis=1))/(2*self.dy)
-                self.vy = -1*(np.roll(Az,-1,axis=0) - np.roll(Az,1,axis=0))/(2*self.dx)
+                # return only the solenoidal field
+                self.vx = vx_sol
+                self.vy = vy_sol
             elif self.vel_op == 3:
-                # calculate ad return a compressive field
-                v_k_comp = np.zeros((self.nx,self.ny), dtype=np.complex128)
-                v_k_comp[mask] = 1.j*(KX*vx_k + KY*vy_k)[mask]/(K[mask]**2)
-                v_k_comp[self.nx//2] = 0
-                v_k_comp[:,self.ny//2] = 0
-                v_comp = np.fft.ifftn(v_k_comp).real
-                self.vx = -1*(np.roll(v_comp,-1,axis=0) - np.roll(v_comp,1,axis=0))/(2*self.dx)
-                self.vy = -1*(np.roll(v_comp,-1,axis=1) - np.roll(v_comp,1,axis=1))/(2*self.dy)
+                # return only the compressive field
+                self.vx = vx_comp
+                self.vy = vy_comp
             else:
                 raise ValueError("Invalid velocity field option")
            
 
-            #sigma = np.sqrt(np.std(self.vx)**2 + np.std(self.vy)**2)
-            #self.vx *= self.sigma/sigma
-            #self.vy *= self.sigma/sigma
+            sigma = np.sqrt(np.std(self.vx)**2 + np.std(self.vy)**2)
+            self.vx *= self.sigma/sigma
+            self.vy *= self.sigma/sigma
         else:
             raise ValueError("Invalid velocity field option")
 
