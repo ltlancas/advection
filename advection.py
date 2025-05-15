@@ -159,15 +159,17 @@ class Advection(object):
         # guarantees that the fourier transform is real
         phi = 2*np.pi * np.random.uniform(size=(self.nx,self.ny))
         # first make sure maximum and zero frequency phases are zero
-        phi[0] = 0
+        phi[0,0] = 0
         phi[self.nx//2] = 0
-        phi[:,0] = 0
         phi[:,self.ny//2] = 0
         # make anti-symmetric
         for i in range(1,self.nx//2):
+            phi[i,0] = -1*phi[-i,0]
             for j in range(1,self.ny//2):
                 phi[i,j] = -1*phi[-i,-j]
                 phi[-i,j] = -1*phi[i,-j]
+        for j in range(1,self.ny//2):
+            phi[0,j] = -1*phi[0,-j]
         return phi
 
 
