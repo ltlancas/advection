@@ -69,9 +69,10 @@ class Advection(object):
         self.dy = self.Ly / self.ny
         
         # Create coordinate arrays
-        x = np.linspace(-self.Lx/2, self.Lx/2, self.nx)
-        y = np.linspace(-self.Ly/2, self.Ly/2, self.ny)
-        self.X, self.Y = np.meshgrid(x, y)  # 2D position arrays
+        x = np.linspace(-self.Lx/2+self.dx/2, self.Lx/2-self.dx/2, self.nx)
+        y = np.linspace(-self.Ly/2+self.dy/2, self.Ly/2+self.dy/2, self.ny)
+        X, Y = np.meshgrid(x, y)  # 2D position arrays
+        (self.X,self.Y) = (X.T, Y.T)
         
     def _init_velocity_field(self):
         """
@@ -85,8 +86,8 @@ class Advection(object):
             The standard deviation of the velocity field
         """
         # use numpy to generate a 2D, periodic gaussian random field with a given power spectrum
-        self.vx = np.zeros((self.nx, self.ny))
-        self.vy = np.zeros((self.nx, self.ny))
+        #self.vx = np.zeros((self.nx, self.ny))
+        #self.vy = np.zeros((self.nx, self.ny))
 
         if self.vel_op == 0:
             self.vx = np.ones((self.nx, self.ny))
@@ -101,6 +102,7 @@ class Advection(object):
             KX, KY = np.meshgrid(kx, ky)
             (KX,KY) = (KX.T, KY.T)
             K = np.sqrt(KX**2 + KY**2)
+            (self.KX,self.KY) = (KX, KY)
 
             # Generate random phases in a way that guarantees a real field
             phix = self._get_random_phase()
@@ -111,42 +113,41 @@ class Advection(object):
             mask = K > 0
             vx_k[mask] = K[mask]**(-0.5*self.kspec) * np.exp(1j * phix[mask])
             vy_k[mask] = K[mask]**(-0.5*self.kspec) * np.exp(1j * phiy[mask])
-
-            if self.vel_op >= 2:
-                # calculate compressive component
-                v_k_comp = np.zeros((self.nx,self.ny), dtype=complex)
-                v_k_comp[mask] = (KX.T*vx_k + KY.T*vy_k)[mask]/(K[mask]**2)
-                vx_comp_k = KX.T*v_k_comp
-                vy_comp_k = KY.T*v_k_comp
-                if self.vel_op == 2:
-                    # remove compressive component
-                    vx_k = vx_k - vx_comp_k
-                    vy_k = vy_k - vy_comp_k
-                elif self.vel_op == 3:
-                    # keep compressive component
-                    vx_k = vx_comp_k
-                    vy_k = vy_comp_k
-                else:
-                    raise ValueError("Invalid velocity field option")
-            
-            if self.kmax > 0:
-                # remove high kmodes
-                mask = K/(2*np.pi) > self.kmax
-                vx_k[mask] = 0
-                vy_k[mask] = 0
-
             self.vx_k = vx_k
             self.vy_k = vy_k
-            self.KX = KX
-            self.KY = KY
 
-            # Transform back to real space
-            self.vx = np.real(np.fft.ifftn(vx_k))
-            self.vy = np.real(np.fft.ifftn(vy_k))
+            if self.vel_op == 1:
+                # keep entire field, compressive and solenoidal parts
+                self.vx = np.real(np.fft.ifftn(vx_k))
+                self.vy = np.real(np.fft.ifftn(vy_k))
+            elif self.vel_op == 2:
+                # calculate and return solenoidal field
+                Az_k = np.zeros((self.nx,self.ny), dtype=complex)
+                Az_k[mask] = 1.j*(KX*vy_k - KY*vx_k)[mask]/(K[mask]**2)
+                Az_k[self.nx//2] = 0
+                Az_k[:,self.ny//2] = 0
+                self.Az_k = Az_k
+                Az = np.fft.ifftn(Az_k).real
+                # minus sign in principle comes from the tranformation
+                # it's not strictly necessary to do this
+                self.vx = (np.roll(Az,-1,axis=1) - np.roll(Az,1,axis=1))/(2*self.dy)
+                self.vy = -1*(np.roll(Az,-1,axis=0) - np.roll(Az,1,axis=0))/(2*self.dx)
+            elif self.vel_op == 3:
+                # calculate ad return a compressive field
+                v_k_comp = np.zeros((self.nx,self.ny), dtype=np.complex128)
+                v_k_comp[mask] = 1.j*(KX*vx_k + KY*vy_k)[mask]/(K[mask]**2)
+                v_k_comp[self.nx//2] = 0
+                v_k_comp[:,self.ny//2] = 0
+                v_comp = np.fft.ifftn(v_k_comp).real
+                self.vx = -1*(np.roll(v_comp,-1,axis=0) - np.roll(v_comp,1,axis=0))/(2*self.dx)
+                self.vy = -1*(np.roll(v_comp,-1,axis=1) - np.roll(v_comp,1,axis=1))/(2*self.dy)
+            else:
+                raise ValueError("Invalid velocity field option")
+           
 
-            sigma = np.sqrt(np.std(self.vx)**2 + np.std(self.vy)**2)
-            self.vx *= self.sigma/sigma
-            self.vy *= self.sigma/sigma
+            #sigma = np.sqrt(np.std(self.vx)**2 + np.std(self.vy)**2)
+            #self.vx *= self.sigma/sigma
+            #self.vy *= self.sigma/sigma
         else:
             raise ValueError("Invalid velocity field option")
 
