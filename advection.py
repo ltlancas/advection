@@ -65,10 +65,16 @@ class Advection(object):
         # whether or not to save output
         if "save" not in self.__dict__:
             self.save = False
+        if "calc_box_count" not in self.__dict__:
+            self.calc_box_count = False
         if self.save:
             self.t = 0
             self.scalar_out = [self.scalar]
             self.t_out = [0]
+            if self.calc_box_count:
+                (steps, counts) = self.box_count()
+                self.bc_steps = steps
+                self.box_count_out = [counts]
 
     def _init_grid(self):
         """
@@ -215,6 +221,9 @@ class Advection(object):
             self.t += T
             self.scalar_out.append(self.scalar.copy())
             self.t_out.append(self.t)
+            if self.calc_box_count:
+                (steps, counts) = self.box_count()
+                self.box_count_out.append(counts)
 
     def single_iteration(self, dt):
         """
