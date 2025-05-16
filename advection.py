@@ -59,6 +59,8 @@ class Advection(object):
             self.x_order = 2
         if "y_order" not in self.__dict__:
             self.y_order = 2
+        if "FOFC" not in self.__dict__:
+            self.FOFC = False
 
     def _init_grid(self):
         """
@@ -208,24 +210,49 @@ class Advection(object):
         """
         # use predictor corrector scheme if order > 1
         if (self.x_order > 1 or self.y_order > 1):
-            # 2nd-order integratoin
-            self.reconstruct(self.scalar, self.x_order, "x")
-            self.reconstruct(self.scalar, self.y_order, "y")
+            self.reconstruct(self.scalar, 1, "x")
+            self.reconstruct(self.scalar, 1, "y")
             # take half step forward
-            sdt2 = self.scalar + self.flux_div(dt/2)
+            (F1, G1) = self.calc_fluxes(dt/2)
+            sdt2 = self.scalar + self.flux_div(F1, G1)
 
             # reconstruct again
             self.reconstruct(sdt2, self.x_order, "x")
             self.reconstruct(sdt2, self.y_order, "y")
+            (F2, G2) = self.calc_fluxes(dt)
 
-            self.scalar += self.flux_div(dt)
+            if self.FOFC:
+                # if using FOFC take a trial full step
+                s_tmp = self.scalar + self.flux_div(F2, G2)
+                # identify where fluxes lead to negative values
+                mask = (s_tmp < 0)
+                if self.vel_op == 2:
+                    # if velcoity field is incompressible
+                    # also identify where scalar is too large
+                    mask = np.logical_or(mask, (s_tmp > 1))
+                if np.any(mask):
+                    # construct mask for fluxes
+                    maskF = np.logical_or(mask, np.roll(mask,1,axis=0))
+                    maskG = np.logical_or(mask, np.roll(mask,1,axis=1))
+                    # make sure to multiply by 2 because the first-order fluxes
+                    # were constructed for the half time step
+                    F2[maskF] = 2*F1[maskF]
+                    G2[maskG] = 2*G1[maskG]
+                    self.scalar += self.flux_div(F2, G2)
+                else:
+                    # if no bad values, take full step
+                    self.scalar = s_tmp
+            else:
+                # take full step forward
+                self.scalar += self.flux_div(F2, G2)
         else:
             # perform reconstruction "donor cell" reconstruction
             self.reconstruct(self.scalar, 1, "x")
             self.reconstruct(self.scalar, 1, "y")
 
             # take one forwrad euler/RK1 step
-            self.scalar += self.flux_div(dt)
+            (F,G) = self.calc_fluxes(dt)
+            self.scalar += self.flux_div(F,G)
 
     def reconstruct(self, s, order, direction):
         """
@@ -258,16 +285,22 @@ class Advection(object):
         elif direction == "y":
             self.s_inty = sr*(self.vy_int < 0) + sl*(self.vy_int > 0) + 0.5*(sr+sl)*(self.vy_int == 0)
 
-    def flux_div(self, dt):
+    def calc_fluxes(self, dt):
+        """
+        Calculate the fluxes of the scalar field
+        """
+        # construct fluxes
+        F = -1*dt*self.s_intx*self.vx_int
+        G = -1*dt*self.s_inty*self.vy_int
+
+        return F, G
+
+    def flux_div(self, F, G):
         """
         Calculate the flux divergence of the scalar field
         """
-        # construct fluxes
-        F = -1*(dt/self.dx)*self.s_intx*self.vx_int
-        G = -1*(dt/self.dy)*self.s_inty*self.vy_int
-
         # calculate flux divergences
-        Fdiff = np.roll(F,-1,axis=0) - F
-        Gdiff = np.roll(G,-1,axis=1) - G
+        Fdiff = (np.roll(F,-1,axis=0) - F)/self.dx
+        Gdiff = (np.roll(G,-1,axis=1) - G)/self.dy
 
         return Fdiff + Gdiff
