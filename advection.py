@@ -62,6 +62,14 @@ class Advection(object):
         if "FOFC" not in self.__dict__:
             self.FOFC = False
 
+        # whether or not to save output
+        if "save" not in self.__dict__:
+            self.save = False
+        if self.save:
+            self.t = 0
+            self.scalar_out = [self.scalar]
+            self.t_out = [0]
+
     def _init_grid(self):
         """
         Initializes the grid for the advection equation
@@ -179,7 +187,6 @@ class Advection(object):
             phi[0,j] = -1*phi[0,-j]
         return phi
 
-
     def _init_scalar(self):
         """
         Initializes the scalar field
@@ -203,6 +210,11 @@ class Advection(object):
                 dt = self.dt
             self.single_iteration(dt)
             tev += dt
+        
+        if self.save:
+            self.t += T
+            self.scalar_out.append(self.scalar.copy())
+            self.t_out.append(self.t)
 
     def single_iteration(self, dt):
         """
