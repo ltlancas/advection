@@ -1,3 +1,6 @@
 # ipynb files
 __pycache__
 figures/
+
+# data
+data/

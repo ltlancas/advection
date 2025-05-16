@@ -3,6 +3,10 @@ advection.py
 A class with functionality to solve the spatially varying 2D advection equation
 """
 
+import os
+import sys
+import os.path as osp
+
 import numpy as np
 
 class Advection(object):
@@ -25,10 +29,7 @@ class Advection(object):
         self._init_scalar()
 
         if self.save:
-            self.scalar_out.append(self.scalar)
-            self.t_out.append(self.t)
-            if self.calc_box_count:
-                self.box_count_out.append(self.box_count())
+            self.save_outputs()
 
     #####################################################################################
     #########################   INITIALIZATION FUNCTIONS   ##############################
@@ -79,13 +80,14 @@ class Advection(object):
             self.calc_box_count = False
         
         if self.save:
-
-            self.scalar_out = []
+            self.savedir = "data/N%d_k%1.1e/"%(self.nx,self.kspec)
+            if not osp.exists(self.savedir):
+                os.makedirs(self.savedir)
+            self.iout = 0
             self.t_out = []
             if self.calc_box_count:
                 nstep = np.log2(self.nx//8)
                 self.bc_steps = np.array([2**i for i in range(int(nstep))])
-                self.box_count_out = []
 
     def _init_grid(self):
         """
@@ -231,11 +233,9 @@ class Advection(object):
             tev += dt
         
         self.t += T
+
         if self.save:
-            self.scalar_out.append(self.scalar.copy())
-            self.t_out.append(self.t)
-            if self.calc_box_count:
-                self.box_count_out.append(self.box_count())
+            self.save_outputs()
 
     def single_iteration(self, dt):
         """
@@ -337,6 +337,46 @@ class Advection(object):
         Gdiff = (np.roll(G,-1,axis=1) - G)/self.dy
 
         return Fdiff + Gdiff
+
+
+        """
+        Calculate the flux divergence of the scalar field
+        """
+        # calculate flux divergences
+        Fdiff = (np.roll(F,-1,axis=0) - F)/self.dx
+        Gdiff = (np.roll(G,-1,axis=1) - G)/self.dy
+
+        return Fdiff + Gdiff
+
+    #####################################################################################
+    ##################################   OUTPUT   #######################################
+    #####################################################################################
+
+    def save_outputs(self):
+        """
+        Save the scalar field to a file
+        and the box counting results if requested
+        """
+        np.save(self.savedir+"scalar_%04d"%(self.iout), self.scalar)
+        self.t_out.append(self.t)
+        if self.calc_box_count:
+            counts = self.box_count()
+            out_arr = np.array([self.bc_steps, counts]).T
+            np.save(self.savedir+"box_count_%04d"%(self.iout), out_arr)
+        self.iout += 1
+
+    def load_scalar(self, jout):
+        """
+        Load the scalar field from a file
+        """
+        return np.load(self.savedir+"scalar_%04d.npy"%(jout))
+
+    def load_bc(self, jout):
+        """
+        Load the box counting results from a file
+        """
+        (steps, counts) = np.load(self.savedir+"box_count_%04d.npy"%(jout))
+        return steps, counts
 
     #####################################################################################
     #################################   ANALYSIS   ######################################
