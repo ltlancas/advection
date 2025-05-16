@@ -326,6 +326,32 @@ class Advection(object):
 
         return Fdiff + Gdiff
 
+    @staticmethod
+    def is_power_of_two(num):
+        return num != 0 and (num & (num - 1)) == 0
+
+    @staticmethod
+    def has_hi_and_lo(arr, cut=0.5):
+        """
+        Check if the array has both values above 
+        and below the cut value
+        """
+        return 1.*np.any(arr>cut) and np.any(arr<cut)
+
+    @staticmethod
+    def average_down(arr, op = np.mean):
+        """
+        Create an array with half the size of the inpur array
+        by averaging down the input array 
+        """
+        if arr.ndim != 2:
+            raise ValueError("Input array must be 2D")
+        arr_out = np.zeros((arr.shape[0]//2, arr.shape[1]//2))
+        for i in range(arr.shape[0]//2):
+            for j in range(arr.shape[1]//2):
+                arr_out[i,j] = op(arr[2*i:2*i+2, 2*j:2*j+2].flatten())
+        return arr_out
+
     def box_count(self):
         """
         Box counting algorithm to calculate the fractal dimension
@@ -337,41 +363,16 @@ class Advection(object):
         lo : float
             Lower threshold for includion in box counting
         """
-        if (self.nx != self.ny) or not(is_power_of_two(self.nx)):
+        if (self.nx != self.ny) or not(self.is_power_of_two(self.nx)):
             raise ValueError("Box counting only works for square grids with power of two sizes")
         # initialize box sizes and counts
-        nstep = np.log2(arr.shape[0]//8)
+        nstep = np.log2(self.nx//8)
         counts = np.zeros(int(nstep))
         steps = np.array([2**i for i in range(int(nstep))])
+        arr = self.scalar.copy()
         for n in range(int(nstep)):
-            sel = np.where(average_down(arr,op=has_hi_and_lo)>0)[0]
+            sel = np.where(self.average_down(arr,op=self.has_hi_and_lo)>0)[0]
             counts[n] = len(sel)
-            arr = average_down(arr)
+            arr = self.average_down(arr)
 
         return (steps, counts)
-
-        @staticmethod
-        def is_power_of_two(num):
-            return num != 0 and (num & (num - 1)) == 0
-
-        @staticmethod
-        def has_hi_and_lo(arr, cut=0.5):
-            """
-            Check if the array has both values above 
-            and below the cut value
-            """
-            return 1.*np.any(arr>cut) and np.any(arr<cut)
-
-        @staticmethod
-        def average_down(arr, op = np.mean):
-            """
-            Create an array with half the size of the inpur array
-            by averaging down the input array 
-            """
-            if arr.ndim != 2:
-                raise ValueError("Input array must be 2D")
-            arr_out = np.zeros((arr.shape[0]//2, arr.shape[1]//2))
-            for i in range(arr.shape[0]//2):
-                for j in range(arr.shape[1]//2):
-                    arr_out[i,j] = op(arr[2*i:2*i+2, 2*j:2*j+2].flatten())
-            return arr_out
