@@ -5,7 +5,6 @@ A class with functionality to solve the spatially varying 2D advection equation
 
 import numpy as np
 
-
 class Advection(object):
     """
     A class to solve the spatially varying 2D advection equation
@@ -31,6 +30,9 @@ class Advection(object):
             if self.calc_box_count:
                 self.box_count_out.append(self.box_count())
 
+    #####################################################################################
+    #########################   INITIALIZATION FUNCTIONS   ##############################
+    #####################################################################################
     def _process_params(self, **kwargs):
         # store kwargs in attributes
         for key, value in kwargs.items():
@@ -77,6 +79,7 @@ class Advection(object):
             self.calc_box_count = False
         
         if self.save:
+
             self.scalar_out = []
             self.t_out = []
             if self.calc_box_count:
@@ -211,6 +214,9 @@ class Advection(object):
         else:
             raise ValueError("Invalid scalar initial condition option")
 
+    #####################################################################################
+    ################################   INTEGRATOR   #####################################
+    #####################################################################################
     def solve(self, T):
         """
         Solve the advection equation for a given time step
@@ -332,6 +338,9 @@ class Advection(object):
 
         return Fdiff + Gdiff
 
+    #####################################################################################
+    #################################   ANALYSIS   ######################################
+    #####################################################################################
     @staticmethod
     def is_power_of_two(num):
         return num != 0 and (num & (num - 1)) == 0
