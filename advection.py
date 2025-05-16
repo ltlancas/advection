@@ -19,6 +19,19 @@ class Advection(object):
         ----------
         kwargs : Dictionary of keyword arguments
         """
+
+        self._process_params(**kwargs)
+        self._init_grid()
+        self._init_velocity_field()
+        self._init_scalar()
+
+        if self.save:
+            self.scalar_out.append(self.scalar)
+            self.t_out.append(self.t)
+            if self.calc_box_count:
+                self.box_count_out.append(self.box_count())
+
+    def _process_params(self, **kwargs):
         # store kwargs in attributes
         for key, value in kwargs.items():
             setattr(self, key, value)
@@ -31,6 +44,9 @@ class Advection(object):
             self.Lx = 1.0
         if "Ly" not in self.__dict__:
             self.Ly = 1.0
+        self.dx = self.Lx / self.nx
+        self.dy = self.Ly / self.ny
+        self.t = 0
         
         if "kspec" not in self.__dict__:
             self.kspec = 2.0
@@ -44,17 +60,9 @@ class Advection(object):
         # options for scalar initial conditions
         if "si_op" not in self.__dict__:
             self.si_op = 0
-        
-        self._init_grid()
-        self._init_velocity_field()
-        self._init_scalar()
 
-        if "tlim" not in self.__dict__:
-            self.tlim = 10*max(self.Lx/self.sigma, self.Ly/self.sigma)
         if "cfl" not in self.__dict__:
             self.cfl = 0.5
-        self.dt = self.cfl*min(self.dx/np.max(np.abs(self.vx)), self.dy/np.max(np.abs(self.vy)))
-        self.nt = int(self.tlim/self.dt)
         if "x_order" not in self.__dict__:
             self.x_order = 2
         if "y_order" not in self.__dict__:
@@ -67,23 +75,19 @@ class Advection(object):
             self.save = False
         if "calc_box_count" not in self.__dict__:
             self.calc_box_count = False
+        
         if self.save:
-            self.t = 0
-            self.scalar_out = [self.scalar]
-            self.t_out = [0]
+            self.scalar_out = []
+            self.t_out = []
             if self.calc_box_count:
-                (steps, counts) = self.box_count()
-                self.bc_steps = steps
-                self.box_count_out = [counts]
+                nstep = np.log2(self.nx//8)
+                self.bc_steps = np.array([2**i for i in range(int(nstep))])
+                self.box_count_out = []
 
     def _init_grid(self):
         """
         Initializes the grid for the advection equation
-        """
-        # Create coordinate arrays
-        self.dx = self.Lx / self.nx
-        self.dy = self.Ly / self.ny
-        
+        """        
         # Create coordinate arrays
         x = np.linspace(-self.Lx/2+self.dx/2, self.Lx/2-self.dx/2, self.nx)
         y = np.linspace(-self.Ly/2+self.dy/2, self.Ly/2+self.dy/2, self.ny)
@@ -174,6 +178,9 @@ class Advection(object):
         # get interface velocities
         self.vx_int = 0.5*(self.vx + np.roll(self.vx,1,axis=0))
         self.vy_int = 0.5*(self.vy + np.roll(self.vy,1,axis=1))
+        
+        # set time step based on velocity field
+        self.dt = self.cfl*min(self.dx/np.max(np.abs(self.vx)), self.dy/np.max(np.abs(self.vy)))
 
     def _get_random_phase(self):
         # creates random phase matrix in a way that
@@ -217,13 +224,12 @@ class Advection(object):
             self.single_iteration(dt)
             tev += dt
         
+        self.t += T
         if self.save:
-            self.t += T
             self.scalar_out.append(self.scalar.copy())
             self.t_out.append(self.t)
             if self.calc_box_count:
-                (steps, counts) = self.box_count()
-                self.box_count_out.append(counts)
+                self.box_count_out.append(self.box_count())
 
     def single_iteration(self, dt):
         """
@@ -375,4 +381,4 @@ class Advection(object):
             counts[n] = len(sel)
             arr = self.average_down(arr)
 
-        return (steps, counts)
+        return counts
