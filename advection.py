@@ -6,6 +6,7 @@ A class with functionality to solve the spatially varying 2D advection equation
 import os
 import sys
 import os.path as osp
+import glob
 
 import numpy as np
 
@@ -76,15 +77,27 @@ class Advection(object):
         # whether or not to save output
         if "save" not in self.__dict__:
             self.save = False
+        if "save_scalar" not in self.__dict__:
+            self.save_scalar = False
         if "calc_box_count" not in self.__dict__:
             self.calc_box_count = False
         
         if self.save:
-            self.savedir = "data/N%d_k%1.1e/"%(self.nx,self.kspec)
+            self.basedir = osp.dirname(osp.abspath(__file__))
+            self.savedir = "data/N%d_k%1.1e_it0000/"%(self.nx,self.kspec)
             if not osp.exists(self.savedir):
                 os.makedirs(self.savedir)
-            self.iout = 0
-            self.t_out = []
+                self.iter = 0
+                self.iout = 0
+            else:
+                save_dir_patterns = [("data/N%d_k%1.1e_it????/"%(self.nx,self.kspec),),]
+                dirs = self._find_match(save_dir_patterns)
+                nums = [int(d[-5:-1]) for d in dirs]
+                self.iter = max(nums) + 1
+                self.savedir = "data/N%d_k%1.1e_it%04d/"%(self.nx,self.kspec,self.iter)
+                os.makedirs(self.savedir)
+                self.iout = 0
+            self.t_outs = []
             if self.calc_box_count:
                 nstep = np.log2(self.nx//8)
                 self.bc_steps = np.array([2**i for i in range(int(nstep))])
@@ -357,8 +370,11 @@ class Advection(object):
         Save the scalar field to a file
         and the box counting results if requested
         """
-        np.save(self.savedir+"scalar_%04d"%(self.iout), self.scalar)
-        self.t_out.append(self.t)
+        if self.save_scalar:
+            np.save(self.savedir+"scalar_%04d"%(self.iout), self.scalar)
+        self.t_outs.append(self.t)
+        # this will over-write the old file every time
+        np.save(self.savedir+"t_outs", self.t_outs)
         if self.calc_box_count:
             counts = self.box_count()
             out_arr = np.array([self.bc_steps, counts]).T
@@ -377,6 +393,15 @@ class Advection(object):
         """
         (steps, counts) = np.load(self.savedir+"box_count_%04d.npy"%(jout))
         return steps, counts
+
+    def _find_match(self, patterns):
+        glob_match = lambda p: sorted(glob.glob(osp.join(self.basedir, *p)))
+        for p in patterns:
+            f = glob_match(p)
+            if f:
+                break
+
+        return f
 
     #####################################################################################
     #################################   ANALYSIS   ######################################
